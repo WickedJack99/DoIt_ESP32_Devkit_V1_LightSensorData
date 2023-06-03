@@ -1,0 +1,254 @@
+//-------------------------------------------------------------------------------
+//Libraries
+//-------------------------------------------------------------------------------
+#include <WiFi.h>
+#include <NTPClient.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#include <base64.h>
+
+//-------------------------------------------------------------------------------
+//Global variables
+//-------------------------------------------------------------------------------
+
+//-------------------------------------------------------------------------------
+// Debug mode? true = yes; false = no
+//-------------------------------------------------------------------------------
+const bool DEBUG = true;
+
+//-------------------------------------------------------------------------------
+// 1000 milliseconds = 1 second
+// 60 seconds = 1 minute
+// 60 minutes = 1 hour
+// 1000 * 60 * 60 = 3_600_000
+
+//-------------------------------------------------------------------------------
+// delay time in milliseconds (1h)
+//-------------------------------------------------------------------------------
+const unsigned long DELAY = 3600000;
+
+//-------------------------------------------------------------------------------
+// delay time for debugging in milliseconds (1s)
+//-------------------------------------------------------------------------------
+const unsigned long DEBUG_DELAY = 1000;
+
+//-------------------------------------------------------------------------------
+// value indicating gpio pin
+//-------------------------------------------------------------------------------
+const int GPIO34 = 34;
+
+//-------------------------------------------------------------------------------
+// ADC value
+//-------------------------------------------------------------------------------
+int iLuxResistorResolution = 10;
+
+float fLuxValue = 0.0;
+
+//-------------------------------------------------------------------------------
+// Wifi settings
+//-------------------------------------------------------------------------------
+const char* WIFI_SSID = "";  // Enter SSID here
+const char* WIFI_PASSWORD = "";  //Enter Password here
+
+int iElapsedConnectionTime = 0;
+
+//-------------------------------------------------------------------------------
+// Github settings
+//-------------------------------------------------------------------------------
+const char*  GITHUB_ADDRESS = "api.github.com";
+
+const char* GITHUB_ROOT_CA = \
+"-----BEGIN CERTIFICATE-----\n" \
+"MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh\n" \
+"MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3\n" \
+"d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD\n" \
+"QTAeFw0wNjExMTAwMDAwMDBaFw0zMTExMTAwMDAwMDBaMGExCzAJBgNVBAYTAlVT\n" \
+"MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j\n" \
+"b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IENBMIIBIjANBgkqhkiG\n" \
+"9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4jvhEXLeqKTTo1eqUKKPC3eQyaKl7hLOllsB\n" \
+"CSDMAZOnTjC3U/dDxGkAV53ijSLdhwZAAIEJzs4bg7/fzTtxRuLWZscFs3YnFo97\n" \
+"nh6Vfe63SKMI2tavegw5BmV/Sl0fvBf4q77uKNd0f3p4mVmFaG5cIzJLv07A6Fpt\n" \
+"43C/dxC//AH2hdmoRBBYMql1GNXRor5H4idq9Joz+EkIYIvUX7Q6hL+hqkpMfT7P\n" \
+"T19sdl6gSzeRntwi5m3OFBqOasv+zbMUZBfHWymeMr/y7vrTC0LUq7dBMtoM1O/4\n" \
+"gdW7jVg/tRvoSSiicNoxBN33shbyTApOB6jtSj1etX+jkMOvJwIDAQABo2MwYTAO\n" \
+"BgNVHQ8BAf8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUA95QNVbR\n" \
+"TLtm8KPiGxvDl7I90VUwHwYDVR0jBBgwFoAUA95QNVbRTLtm8KPiGxvDl7I90VUw\n" \
+"DQYJKoZIhvcNAQEFBQADggEBAMucN6pIExIK+t1EnE9SsPTfrgT1eXkIoyQY/Esr\n" \
+"hMAtudXH/vTBH1jLuG2cenTnmCmrEbXjcKChzUyImZOMkXDiqw8cvpOp/2PV5Adg\n" \
+"06O/nVsJ8dWO41P0jmP6P6fbtGbfYmbW0W5BjfIttep3Sp+dWOIrWcBAI+0tKIJF\n" \
+"PnlUkiaY4IBIqDfv8NZ5YBberOgOzW6sRBc4L0na4UU+Krk2U886UAb3LujEV0ls\n" \
+"YSEY1QSteDwsOoBrp+uvFRTp2InBuThs4pFsiv9kuXclVzDAGySj4dzp30d8tbQk\n" \
+"CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4=\n" \
+"-----END CERTIFICATE-----\n";
+
+WiFiClientSecure* client;
+
+unsigned long ulGitHubCommitCounter = 0;
+
+String sGithubToken = "";
+
+String sGitHubUser = "";
+String sGitHubRepo = "";
+
+//-------------------------------------------------------------------------------
+//Data
+//-------------------------------------------------------------------------------
+String sData = "";
+
+//-------------------------------------------------------------------------------
+//Time
+//-------------------------------------------------------------------------------
+// Define NTP Client to get time
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
+
+//-------------------------------------------------------------------------------
+//Initialization
+//-------------------------------------------------------------------------------
+void setup()
+{
+  // Set baud rate to 115200
+  Serial.begin(115200);
+  delay(100);
+
+  //connect to your local wi-fi network
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  //connect to wi-fi network
+  connectToWiFi();
+
+  // Initialize a NTPClient to get time
+  timeClient.begin();
+  // Set offset time in seconds to adjust for your timezone, for example:
+  // GMT +1 = 3600
+  // GMT +8 = 28800
+  // GMT -1 = -3600
+  // GMT 0 = 0
+  timeClient.setTimeOffset(3600);
+}
+
+//-------------------------------------------------------------------------------
+//Main loop
+//-------------------------------------------------------------------------------
+void loop()
+{
+  //connect to wi-fi network
+  connectToWiFi();
+
+  // store actual time
+  String sTime = getTimestamp();
+  
+  // Store value of gpio34 adc1_ch6
+  int iADC1_6_Value = analogRead(GPIO34);
+  fLuxValue = calculateLuxValue(iADC1_6_Value);
+
+  // Build data string
+  sData = "Value: " + String(fLuxValue) + " lux\nTime: " + sTime;
+  Serial.println(sData);
+
+  // send value with timestamp to github repo
+  sendPUTRequest(fLuxValue, sTime);
+  
+  // sleep for value ulDelayTime (default: 1 hour) to save energy
+  // avoiding busy wait
+  delay(DELAY);
+}
+
+//-------------------------------------------------------------------------------
+//Functions
+//-------------------------------------------------------------------------------
+
+//-------------------------------------------------------------------------------
+// Connects to wifi
+void connectToWiFi()
+{
+  //check wi-fi is connected to wi-fi network
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.println("WiFi disconnected..");
+    Serial.println("Trying to reconnect..");
+    
+    while (WiFi.status() != WL_CONNECTED)
+    {
+      delay(1000);
+      iElapsedConnectionTime++;
+      Serial.println("Elapsed connection time: " + iElapsedConnectionTime);
+    }
+    iElapsedConnectionTime = 0;
+    Serial.println("WiFi connected..!");
+    Serial.print("Got IP: ");  Serial.println(WiFi.localIP());  
+  }
+}
+
+//-------------------------------------------------------------------------------
+// Gets realtime from WiFi device via udp (specified at beginning)
+String getTimestamp()
+{
+  while(!timeClient.update()) {
+    timeClient.forceUpdate();
+  }
+  
+  return timeClient.getFormattedTime();
+}
+
+//-------------------------------------------------------------------------------
+// Get percentage of ADC value and multiplicate it with one percent of 10 lux
+float calculateLuxValue(int iADC)
+{
+  float fADC1Percent = ((float)4095) / 100;
+  float fADCPercent = ((float)iADC) / fADC1Percent;
+  float fLux1Percent = ((float)iLuxResistorResolution) / 100;
+  
+  return fADCPercent * fLux1Percent;
+}
+
+//-------------------------------------------------------------------------------
+void sendPUTRequest(float fLuxValue, String sTimestamp)
+{
+  HTTPClient https;
+
+  String sContent = "{\"timestamp\":\"" + sTimestamp + "\",\"value\":\"" + String(fLuxValue) + "\"}";
+
+  String sEncodedFile = base64::encode(sContent);
+  
+  String sRequestBody = "{\"message\": \"Sensor data " + String(ulGitHubCommitCounter) + "\",\"content\" :\"" + sEncodedFile + "\"}";
+
+  int iContentLength = sRequestBody.length();
+
+  client = new WiFiClientSecure;
+  
+  client->setCACert(GITHUB_ROOT_CA);
+
+  if (https.begin(*client, "https://api.github.com/repos/" + sGitHubUser + "/" + sGitHubRepo + "/contents/Measurement" + String(ulGitHubCommitCounter) + ".json"))
+  {
+    https.addHeader("Host", "api.github.com");
+    https.addHeader("Content-Type", "application/json");
+    https.addHeader("Authorization", ("Bearer " + sGithubToken));
+    https.addHeader("Content-Length", String(iContentLength));
+    
+    // start connection and send HTTP header
+    int httpCode = https.PUT(sRequestBody);
+      
+    // httpCode will be negative on error
+    if (httpCode > 0)
+    {
+      Serial.println("PUT code: " + String(httpCode));
+      
+      if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY)
+      {
+        String payload = https.getString();
+        Serial.println(payload);
+      }
+    }
+    else
+    {
+      Serial.println("PUT failed, error: " + https.errorToString(httpCode).c_str());
+    }
+      https.end();
+  }
+  else
+  {
+    Serial.println("Unable to connect to server");
+  }
+  ulGitHubCommitCounter++;
+}
