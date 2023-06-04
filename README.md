@@ -11,6 +11,6 @@ It is connected to GPIO34 (ADC1_ch6) since ADC2 doesn't work when using WiFi mod
 > Each hour a new measurement is sent to the repository into the Measurements directory into the specified date directory.
 
 # Sources
-> [Setting up Arduino IDE for ESP32](https://randomnerdtutorials.com/installing-the-esp32-board-in-arduino-ide-windows-instructions/)
-> [Determine pin functionality](https://randomnerdtutorials.com/esp32-pinout-reference-gpios/)
-> [HTTPS with ESP32](https://randomnerdtutorials.com/esp32-https-requests/#esp32-https-requests-httpclient)
+- [Setting up Arduino IDE for ESP32](https://randomnerdtutorials.com/installing-the-esp32-board-in-arduino-ide-windows-instructions/)
+- [Determine pin functionality](https://randomnerdtutorials.com/esp32-pinout-reference-gpios/)
+- [HTTPS with ESP32](https://randomnerdtutorials.com/esp32-https-requests/#esp32-https-requests-httpclient)
