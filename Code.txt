@@ -1,3 +1,5 @@
+//@author WickedJack99
+//@date 04.06.2023
 //-------------------------------------------------------------------------------
 //Libraries
 //-------------------------------------------------------------------------------
@@ -8,29 +10,18 @@
 #include <base64.h>
 
 //-------------------------------------------------------------------------------
-//Global variables
+// Global variables
 //-------------------------------------------------------------------------------
 
-//-------------------------------------------------------------------------------
-// Debug mode? true = yes; false = no
-//-------------------------------------------------------------------------------
-const bool DEBUG = true;
-
-//-------------------------------------------------------------------------------
 // 1000 milliseconds = 1 second
 // 60 seconds = 1 minute
 // 60 minutes = 1 hour
 // 1000 * 60 * 60 = 3_600_000
 
 //-------------------------------------------------------------------------------
-// delay time in milliseconds (1h)
+// Delay time in milliseconds (1h)
 //-------------------------------------------------------------------------------
 const unsigned long DELAY = 3600000;
-
-//-------------------------------------------------------------------------------
-// delay time for debugging in milliseconds (1s)
-//-------------------------------------------------------------------------------
-const unsigned long DEBUG_DELAY = 1000;
 
 //-------------------------------------------------------------------------------
 // value indicating gpio pin
@@ -49,8 +40,6 @@ float fLuxValue = 0.0;
 //-------------------------------------------------------------------------------
 const char* WIFI_SSID = "";  // Enter SSID here
 const char* WIFI_PASSWORD = "";  //Enter Password here
-
-int iElapsedConnectionTime = 0;
 
 //-------------------------------------------------------------------------------
 // Github settings
@@ -83,7 +72,7 @@ const char* GITHUB_ROOT_CA = \
 
 WiFiClientSecure* client;
 
-unsigned long ulGitHubCommitCounter = 0;
+unsigned long ulGitHubCommitCounter = 1;
 
 String sGithubToken = "";
 
@@ -91,19 +80,18 @@ String sGitHubUser = "";
 String sGitHubRepo = "";
 
 //-------------------------------------------------------------------------------
-//Data
-//-------------------------------------------------------------------------------
-String sData = "";
-
-//-------------------------------------------------------------------------------
-//Time
+// Time
 //-------------------------------------------------------------------------------
 // Define NTP Client to get time
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
+unsigned int auiDayLookupTable[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+String sDate;
+
 //-------------------------------------------------------------------------------
-//Initialization
+// Initialization
 //-------------------------------------------------------------------------------
 void setup()
 {
@@ -111,10 +99,9 @@ void setup()
   Serial.begin(115200);
   delay(100);
 
-  //connect to your local wi-fi network
+  // Set wifi credits
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-  //connect to wi-fi network
+  // Connect to wi-fi network
   connectToWiFi();
 
   // Initialize a NTPClient to get time
@@ -128,67 +115,142 @@ void setup()
 }
 
 //-------------------------------------------------------------------------------
-//Main loop
+// Main loop
 //-------------------------------------------------------------------------------
 void loop()
 {
-  //connect to wi-fi network
+  // Re-/Connect to wifi
   connectToWiFi();
 
-  // store actual time
-  String sTime = getTimestamp();
+  // Get actual time
+  String sTime = getTime();
   
-  // Store value of gpio34 adc1_ch6
+  // Get value of gpio34 adc1_ch6
   int iADC1_6_Value = analogRead(GPIO34);
+  
+  // Calculate actual lux value
   fLuxValue = calculateLuxValue(iADC1_6_Value);
 
-  // Build data string
-  sData = "Value: " + String(fLuxValue) + " lux\nTime: " + sTime;
-  Serial.println(sData);
-
-  // send value with timestamp to github repo
+  // Send value with timestamp to github repo
   sendPUTRequest(fLuxValue, sTime);
   
-  // sleep for value ulDelayTime (default: 1 hour) to save energy
-  // avoiding busy wait
+  // Sleep for value DELAY (1 hour) to save energy
   delay(DELAY);
 }
 
 //-------------------------------------------------------------------------------
-//Functions
+// Functions
 //-------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------
 // Connects to wifi
 void connectToWiFi()
 {
-  //check wi-fi is connected to wi-fi network
+  // Check WiFi is connected to WiFi network
   if (WiFi.status() != WL_CONNECTED)
   {
     Serial.println("WiFi disconnected..");
     Serial.println("Trying to reconnect..");
-    
+
+    // Wait for connection response
     while (WiFi.status() != WL_CONNECTED)
     {
       delay(1000);
-      iElapsedConnectionTime++;
-      Serial.println("Elapsed connection time: " + iElapsedConnectionTime);
     }
-    iElapsedConnectionTime = 0;
     Serial.println("WiFi connected..!");
-    Serial.print("Got IP: ");  Serial.println(WiFi.localIP());  
+    Serial.print("Got IP: ");
+    Serial.println(WiFi.localIP());
   }
 }
 
 //-------------------------------------------------------------------------------
 // Gets realtime from WiFi device via udp (specified at beginning)
-String getTimestamp()
+String getTime()
 {
-  while(!timeClient.update()) {
+  // Update time
+  while(!timeClient.update())
+  {
     timeClient.forceUpdate();
   }
+  // Seconds elapsed since 00:00:00 UTC 1 January 1970
+  unsigned long ulEpoch = timeClient.getEpochTime();
+  // Calculating parts of time
+  unsigned long ulEpochSeconds = ulEpoch % 60;
+  unsigned long ulEpochMinutes = (ulEpoch / 60) % 60;
+  unsigned long ulEpochHours = (ulEpoch / (60 * 60)) % 24;
+
+  // Setting global date
+  // !!!
+  // Performance optimization to prevent calling two times
+  sDate = getDate(ulEpoch);
   
-  return timeClient.getFormattedTime();
+  // Returning time
+  return ( sDate + "-" + String(ulEpochHours) + ":" + String(ulEpochMinutes) + ":" + String(ulEpochSeconds) );
+}
+
+String getDate(unsigned long ulEpoch)
+{
+  // Calculating parts of date
+  unsigned long ulEpochDays = (ulEpoch / (60 * 60 * 24));
+  unsigned long ulEpochMonths = (ulEpoch / (60 * 60 * 24 * 365)) % 12;
+  unsigned long ulEpochYears = (ulEpoch / (60 * 60 * 24 * 365)) + 1970;
+
+  ulEpochDays -= ((ulEpochYears - 1970) * 365);
+
+  // Subtract leapdays
+  for (int i = 1970; i < ulEpochYears; i++)
+  {
+    if (isLeapYear(i) == true)
+    {
+      ulEpochDays--;
+    }
+  }
+
+  // Note: maybe still not working in leap years because doing % 365 but leap year has 366 days
+  ulEpochDays %= 365;
+
+  unsigned int uiIterator = 0;
+  unsigned long ulDays = 0;
+  // Subtract days of month till ulEpochDays is smaller / equal to days of a month
+  while (ulEpochDays > ulDays)
+  {
+    ulDays = auiDayLookupTable[uiIterator];
+    if (uiIterator == 1)
+    {
+      if (isLeapYear(ulEpochYears))
+      {
+        ulDays = 29;
+      }
+      // It could be possible that the condition of the loop is now wrong
+      // Since ulDays was 28
+      // 29 > 28
+      // So it would normally subtract 28 and say it's 1st March
+      // But since it's a leap year, it's 29th February!
+      // So we have to break out of loop without subtracting
+      if (ulDays == ulEpochDays)
+      {
+        uiIterator++;
+        break;
+      }
+    }
+    ulEpochDays -= ulDays;
+    uiIterator++;
+  }
+  
+  // Returning date
+  return ( String((ulEpochDays + 1)) + "-" + String(ulEpochMonths + 1) + "-" + String(ulEpochYears) );
+}
+
+//-------------------------------------------------------------------------------
+// Tests if overhanded year is a leap year, returns true if it is, false, if not
+bool isLeapYear(unsigned long ulEpochYear)
+{
+  bool bIsLeapYear = false;
+  if ((((ulEpochYear % 4) == 0 && !((ulEpochYear % 100) == 0))) || ((ulEpochYear % 400) == 0))
+  {
+    bIsLeapYear = true;
+  }
+  return bIsLeapYear;
 }
 
 //-------------------------------------------------------------------------------
@@ -205,13 +267,13 @@ float calculateLuxValue(int iADC)
 //-------------------------------------------------------------------------------
 void sendPUTRequest(float fLuxValue, String sTimestamp)
 {
-  HTTPClient https;
+  HTTPClient oHttpClient;
 
   String sContent = "{\"timestamp\":\"" + sTimestamp + "\",\"value\":\"" + String(fLuxValue) + "\"}";
 
   String sEncodedFile = base64::encode(sContent);
   
-  String sRequestBody = "{\"message\": \"Sensor data " + String(ulGitHubCommitCounter) + "\",\"content\" :\"" + sEncodedFile + "\"}";
+  String sRequestBody = "{\"message\": \"Sensor data " + sTimestamp + "\",\"content\" :\"" + sEncodedFile + "\"}";
 
   int iContentLength = sRequestBody.length();
 
@@ -219,36 +281,37 @@ void sendPUTRequest(float fLuxValue, String sTimestamp)
   
   client->setCACert(GITHUB_ROOT_CA);
 
-  if (https.begin(*client, "https://api.github.com/repos/" + sGitHubUser + "/" + sGitHubRepo + "/contents/Measurement" + String(ulGitHubCommitCounter) + ".json"))
+  // !!! sDate is set at loop when getting timestamp via getTime()
+  if (oHttpClient.begin(*client, "https://api.github.com/repos/" + sGitHubUser + "/" + sGitHubRepo + "/contents/Measurements/" + sDate + "/Measurement_" + sTimestamp + ".json"))
   {
-    https.addHeader("Host", "api.github.com");
-    https.addHeader("Content-Type", "application/json");
-    https.addHeader("Authorization", ("Bearer " + sGithubToken));
-    https.addHeader("Content-Length", String(iContentLength));
+    oHttpClient.addHeader("Host", "api.github.com");
+    oHttpClient.addHeader("Content-Type", "application/json");
+    oHttpClient.addHeader("Authorization", ("Bearer " + sGithubToken));
+    oHttpClient.addHeader("Content-Length", String(iContentLength));
     
     // start connection and send HTTP header
-    int httpCode = https.PUT(sRequestBody);
-      
-    // httpCode will be negative on error
-    if (httpCode > 0)
+    int iHttpCode = oHttpClient.PUT(sRequestBody);
+
+    if (iHttpCode > 0)
     {
-      Serial.println("PUT code: " + String(httpCode));
+    // Print response status code
+    Serial.printf("PUT code: %d\n", iHttpCode);
       
-      if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY)
+      if (iHttpCode == HTTP_CODE_OK || iHttpCode == HTTP_CODE_MOVED_PERMANENTLY)
       {
-        String payload = https.getString();
-        Serial.println(payload);
+        // Print server response payload
+        String sPayload = oHttpClient.getString();
+        Serial.println(sPayload);
       }
     }
     else
     {
-      Serial.println("PUT failed, error: " + https.errorToString(httpCode).c_str());
+      Serial.printf("PUT failed, error: %s\n", oHttpClient.errorToString(iHttpCode).c_str());
     }
-      https.end();
+      oHttpClient.end();
   }
   else
   {
     Serial.println("Unable to connect to server");
   }
-  ulGitHubCommitCounter++;
 }
