@@ -1,6 +1,8 @@
 # DoIt_ESP32_Devkit_V1_LightSensorData
 Repository to receive light sensor data.
 
+Be aware that functions to calculate the date are not working properly.
+
 # Device
 > The device used is a DoIt ESP32 Devkit V1 development board.
 
