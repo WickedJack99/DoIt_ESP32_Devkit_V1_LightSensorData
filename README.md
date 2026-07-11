@@ -1,7 +1,11 @@
 # DoIt_ESP32_Devkit_V1_LightSensorData
 Repository to receive light sensor data.
 
-Be aware that functions to calculate the date are not working properly.
+Note: the custom date calculation has known bugs. The repository is kept as an archive of the original one-week implementation.
+
+Built in one week as a small ESP32 light sensor data logger.
+
+Not actively developing.
 
 # Device
 > The device used is a DoIt ESP32 Devkit V1 development board.
